@@ -1,0 +1,392 @@
+<!doctype html>
+
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NeonStream — Player Local & Offline</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    /* Reset mínimo */
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:#06060a;color:#e6f2ff;display:flex;align-items:center;justify-content:center;padding:24px}/* Layout */
+.app{width:100%;max-width:1200px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.6);overflow:hidden;border:1px solid rgba(255,255,255,0.03)}
+.grid{display:grid;grid-template-columns: 1fr 360px;min-height:520px}
+
+/* Player area */
+.player-wrap{padding:18px;display:flex;flex-direction:column;gap:14px}
+.screen{position:relative;border-radius:12px;overflow:hidden;background:#000;height:420px;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:contain;background:#000}
+.overlay-message{position:absolute;left:12px;top:12px;padding:8px 12px;border-radius:999px;background:linear-gradient(90deg, rgba(255,0,255,0.12), rgba(0,255,255,0.06));backdrop-filter: blur(4px);border:1px solid rgba(255,255,255,0.03);font-weight:600}
+
+/* Controls */
+.controls{display:flex;align-items:center;gap:12px;padding:8px 10px;background:linear-gradient(180deg, rgba(10,10,20,0.3), rgba(5,5,10,0.3));border-radius:10px}
+.btn{background:transparent;border:0;padding:8px;border-radius:10px;cursor:pointer;outline:none;color:inherit;font-weight:700}
+.btn:hover{transform:translateY(-2px)}
+.seek{flex:1;display:flex;align-items:center;gap:8px}
+input[type=range]{-webkit-appearance:none;background:transparent;height:6px}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:10px;background:linear-gradient(90deg,#ff1eff,#00fff0)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 0 8px rgba(0,255,255,0.4)}
+
+/* Sidebar */
+.sidebar{padding:18px;border-left:1px solid rgba(255,255,255,0.02);display:flex;flex-direction:column;gap:12px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+.dropzone{min-height:80px;display:flex;align-items:center;justify-content:center;border:2px dashed rgba(255,255,255,0.03);border-radius:10px;font-weight:600;color:rgba(255,255,255,0.7)}
+.playlist{overflow:auto;max-height:320px;display:flex;flex-direction:column;gap:8px;padding-right:6px}
+.item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;transition:all .15s;border:1px solid transparent}
+.item:hover{transform:translateX(6px);border:1px solid rgba(255,255,255,0.03)}
+.item.active{background:linear-gradient(90deg, rgba(255,0,255,0.06), rgba(0,255,255,0.04));box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+.thumb{width:64px;height:40px;background:#111;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px}
+.meta{flex:1}
+.meta small{display:block;color:rgba(255,255,255,0.6);font-size:12px}
+
+/* Footer info */
+.muted{color:rgba(255,255,255,0.6);font-size:13px}
+
+/* Responsive */
+@media (max-width:900px){
+  .grid{grid-template-columns:1fr}
+  .sidebar{order:2;border-left:none}
+  .screen{height:320px}
+}
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,0.02)">
+      <div style="display:flex;gap:12px;align-items:center">
+        <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#ff00c8,#00fff0);display:flex;align-items:center;justify-content:center;font-weight:800;color:#051018">NS</div>
+        <div>
+          <div style="font-weight:800;font-size:18px">NeonStream</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.6)">Player local • offline (arquivos que você fornece)</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button id="saveBtn" class="btn muted">Salvar playlist</button>
+        <button id="clearBtn" class="btn muted">Limpar tudo</button>
+      </div>
+    </div><div class="grid">
+  <div class="player-wrap">
+    <div class="screen" id="screen">
+      <video id="video" controls crossorigin playsinline></video>
+      <div class="overlay-message">Tema: Neon — elegante</div>
+    </div>
+
+    <div class="controls">
+      <button id="playPause" class="btn">▶️</button>
+      <div class="seek">
+        <input id="seek" type="range" value="0" min="0" step="0.1">
+        <div style="width:95px;text-align:right;font-weight:700;font-size:13px;color:rgba(255,255,255,0.8)" id="time">00:00 / 00:00</div>
+      </div>
+      <select id="speed" class="btn">
+        <option value="0.5">0.5x</option>
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2x</option>
+      </select>
+      <button id="pip" class="btn">PiP</button>
+      <button id="fs" class="btn">⛶</button>
+    </div>
+
+    <div style="display:flex;gap:12px;align-items:center">
+      <label class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+        <input id="fileInput" type="file" accept="video/*,application/vnd.apple.mpegurl" multiple style="display:none">
+        <span style="font-weight:700">📁 Adicionar arquivos</span>
+      </label>
+
+      <div class="muted">Arraste e solte arquivos no painel lateral para importar e salvar (offline)</div>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">Importar / Adicionar</div>
+      <div class="dropzone" id="dropzone">Arraste arquivos aqui (.mp4, .webm, .m3u8)</div>
+    </div>
+
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <div style="font-weight:800;margin-bottom:8px">Playlist</div>
+      <div class="playlist" id="playlist"></div>
+    </div>
+
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:800">Armazenamento</div>
+        <div class="muted" id="storageInfo">Nenhum arquivo salvo</div>
+      </div>
+      <div style="text-align:right">
+        <small class="muted">LocalStorage • IndexedDB</small>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.02);display:flex;justify-content:space-between;align-items:center">
+  <div class="muted">Feito por você • Lembre-se: não hospede conteúdo protegido sem permissão.</div>
+  <div class="muted">Suporta: MP4, WebM, HLS (.m3u8). Arquivos importados podem ser reproduzidos offline se salvos.</div>
+</div>
+
+  </div>  <!-- hls.js para streaming HLS (opcional para .m3u8) -->  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>  <script>
+    // NeonStream — player com armazenamento em IndexedDB para blobs (offline)
+    const video = document.getElementById('video');
+    const playPause = document.getElementById('playPause');
+    const seek = document.getElementById('seek');
+    const time = document.getElementById('time');
+    const speed = document.getElementById('speed');
+    const pipBtn = document.getElementById('pip');
+    const fsBtn = document.getElementById('fs');
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const playlistEl = document.getElementById('playlist');
+    const saveBtn = document.getElementById('saveBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const storageInfo = document.getElementById('storageInfo');
+
+    // --- IndexedDB simples para blobs ---
+    const DB_NAME = 'NeonStreamDB';
+    const DB_STORE = 'videos';
+    let db;
+
+    function openDB(){
+      return new Promise((res,rej)=>{
+        const req = indexedDB.open(DB_NAME,1);
+        req.onupgradeneeded = e => {
+          db = e.target.result;
+          if(!db.objectStoreNames.contains(DB_STORE)){
+            const store = db.createObjectStore(DB_STORE,{keyPath:'id'});
+            store.createIndex('name','name',{unique:false});
+          }
+        }
+        req.onsuccess = e => { db = e.target.result; res(db); }
+        req.onerror = e => rej(e.target.error);
+      })
+    }
+
+    function id(){return 'v_'+Math.random().toString(36).slice(2,9)}
+
+    function saveBlobEntry(entry){
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(DB_STORE,'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.put(entry);
+        req.onsuccess = ()=>res(true);
+        req.onerror = e=>rej(e.target.error);
+      })
+    }
+
+    function getBlobEntry(idKey){
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(DB_STORE,'readonly');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.get(idKey);
+        req.onsuccess = ()=>res(req.result);
+        req.onerror = e=>rej(e.target.error);
+      })
+    }
+
+    function listEntries(){
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(DB_STORE,'readonly');
+        const store = tx.objectStore(DB_STORE);
+        const items = [];
+        const cur = store.openCursor();
+        cur.onsuccess = e=>{
+          const c = e.target.result;
+          if(c){ items.push(c.value); c.continue(); } else res(items);
+        }
+        cur.onerror = e=>rej(e.target.error);
+      })
+    }
+
+    function deleteEntry(idKey){
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(DB_STORE,'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.delete(idKey);
+        req.onsuccess = ()=>res(true);
+        req.onerror = e=>rej(e.target.error);
+      })
+    }
+
+    // --- Playlist em localStorage: array de objetos {id,name,type,srcType} ---
+    function loadPlaylist(){
+      try{ return JSON.parse(localStorage.getItem('neon_playlist')||'[]') }catch{ return [] }
+    }
+    function savePlaylist(pl){ localStorage.setItem('neon_playlist',JSON.stringify(pl)) }
+
+    // inicializa DB e UI
+    (async ()=>{
+      await openDB();
+      renderPlaylist();
+      updateStorageInfo();
+    })();
+
+    // --- UI handlers ---
+    fileInput.addEventListener('change', async e=>{
+      const files = Array.from(e.target.files);
+      await handleFiles(files);
+      fileInput.value='';
+    });
+
+    dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.style.opacity = 0.8 });
+    dropzone.addEventListener('dragleave', e=>{ dropzone.style.opacity = 1 });
+    dropzone.addEventListener('drop', async e=>{
+      e.preventDefault(); dropzone.style.opacity = 1;
+      const files = Array.from(e.dataTransfer.files);
+      await handleFiles(files);
+    });
+
+    async function handleFiles(files){
+      const playlist = loadPlaylist();
+      for(const f of files){
+        // válida extensões rápidas
+        const entryId = id();
+        const meta = {id:entryId,name:f.name,type:f.type || 'video',size:f.size,lastModified:f.lastModified,srcType:'blob'};
+        // le como blob e salva no indexedDB
+        const blob = f.slice(0,f.size, f.type);
+        await saveBlobEntry({id:entryId,blob:blob,name:f.name,type:f.type,size:f.size});
+        playlist.push(meta);
+      }
+      savePlaylist(playlist);
+      renderPlaylist();
+      updateStorageInfo();
+    }
+
+    // Adiciona URLs (streaming) via prompt — opcional
+    async function addUrl(url){
+      const playlist = loadPlaylist();
+      const meta = {id:id(),name:url,type:'url',srcType: url.endsWith('.m3u8')? 'hls':'http',url};
+      playlist.push(meta); savePlaylist(playlist); renderPlaylist();
+    }
+
+    // play item
+    async function playItem(item){
+      // limpa hls se existir
+      if(window._hls){ try{ window._hls.destroy(); window._hls = null }catch(e){} }
+
+      if(item.srcType === 'blob'){
+        const entry = await getBlobEntry(item.id);
+        if(!entry){ alert('Arquivo não encontrado no armazenamento. Talvez tenha sido apagado.'); return }
+        const objectUrl = URL.createObjectURL(entry.blob);
+        video.src = objectUrl;
+        video.play();
+      } else if(item.srcType === 'hls'){
+        // usar hls.js para .m3u8
+        if(Hls.isSupported()){
+          const hls = new Hls(); window._hls = hls;
+          hls.loadSource(item.url);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, ()=>video.play());
+        } else {
+          // Safari suporta HLS nativo
+          video.src = item.url; video.play();
+        }
+      } else if(item.srcType === 'http'){
+        video.src = item.url; video.play();
+      }
+      // marcar ativo
+      document.querySelectorAll('.item').forEach(el=>el.classList.remove('active'));
+      const el = document.querySelector(`[data-id="${item.id}"]`);
+      if(el) el.classList.add('active');
+    }
+
+    // renderiza playlist
+    async function renderPlaylist(){
+      const pl = loadPlaylist();
+      playlistEl.innerHTML='';
+      for(const it of pl){
+        const div = document.createElement('div'); div.className='item'; div.dataset.id = it.id;
+        const thumb = document.createElement('div'); thumb.className='thumb'; thumb.textContent = it.name.split('.').slice(0,1)[0];
+        const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<div style="font-weight:700">${it.name}</div><small>${it.srcType==='blob'? 'Local salvo':(it.srcType==='hls'?'HLS stream':'Link')}</small>`;
+        const del = document.createElement('button'); del.className='btn'; del.textContent='✖'; del.title='Remover';
+        del.addEventListener('click', async (e)=>{ e.stopPropagation(); await removeItem(it.id); });
+        div.appendChild(thumb); div.appendChild(meta); div.appendChild(del);
+        div.addEventListener('click', ()=>playItem(it));
+        playlistEl.appendChild(div);
+      }
+    }
+
+    async function removeItem(idKey){
+      const pl = loadPlaylist();
+      const remaining = pl.filter(p=>p.id!==idKey);
+      savePlaylist(remaining);
+      // remover blob também
+      try{ await deleteEntry(idKey); }catch(e){}
+      renderPlaylist(); updateStorageInfo();
+    }
+
+    // Controles do player
+    playPause.addEventListener('click', ()=>{ if(video.paused) video.play(); else video.pause(); });
+    video.addEventListener('play', ()=> playPause.textContent = '⏸');
+    video.addEventListener('pause', ()=> playPause.textContent = '▶️');
+
+    video.addEventListener('timeupdate', ()=>{
+      seek.max = video.duration || 0; seek.value = video.currentTime || 0;
+      time.textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+    });
+
+    seek.addEventListener('input', ()=> video.currentTime = parseFloat(seek.value));
+    speed.addEventListener('change', ()=> video.playbackRate = parseFloat(speed.value));
+
+    pipBtn.addEventListener('click', async ()=>{
+      try{ if(document.pictureInPictureElement) await document.exitPictureInPicture(); else await video.requestPictureInPicture(); }catch(e){ alert('PiP não suportado'); }
+    });
+
+    fsBtn.addEventListener('click', ()=>{
+      if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+      else document.exitFullscreen();
+    });
+
+    function formatTime(s){ if(!s || isNaN(s)) return '00:00'; const m = Math.floor(s/60); const sec = Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` }
+
+    // salvar playlist manualmente (já salva automaticamente ao adicionar): opção para exportar JSON
+    saveBtn.addEventListener('click', ()=>{
+      const pl = loadPlaylist();
+      const blob = new Blob([JSON.stringify(pl, null, 2)],{type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'neon_playlist.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // limpar tudo — cuidado
+    clearBtn.addEventListener('click', async ()=>{
+      if(!confirm('Apagar playlist e arquivos salvos?')) return;
+      localStorage.removeItem('neon_playlist');
+      // apagar indexedDB
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = ()=>{ alert('Limpo! Recarregue a página.'); location.reload(); }
+      req.onerror = ()=> alert('Falha ao apagar banco');
+    });
+
+    // atualiza informação de armazenamento
+    async function updateStorageInfo(){
+      const items = await listEntries();
+      if(items.length===0) storageInfo.textContent = 'Nenhum arquivo salvo';
+      else {
+        const total = items.reduce((s,i)=>s + (i.size||0),0);
+        storageInfo.textContent = `${items.length} arquivo(s) • ${(total/1024/1024).toFixed(1)} MB (aprox.)`;
+      }
+    }
+
+    // Permite colar uma URL para adicionar (Ctrl+V) — UX
+    window.addEventListener('paste', e=>{
+      const txt = (e.clipboardData||window.clipboardData).getData('text');
+      if(txt && (txt.startsWith('http://')||txt.startsWith('https://'))){
+        if(confirm('Adicionar URL à playlist? \n'+txt)) addUrl(txt);
+      }
+    });
+
+    // Aviso legal e limites
+    /*
+      Nota legal (inserida para ficar explícita):
+      - Este player permite que você reproduza arquivos que você possui localmente e grave-os no navegador (IndexedDB) para reprodução offline.
+      - Não fornecemos nem podemos ajudar a obter material protegido por direitos autorais sem autorização.
+      - O armazenamento em IndexedDB tem limites (depende do navegador). Arquivos grandes podem falhar ao salvar.
+    */
+
+  </script></body>
+</html>
